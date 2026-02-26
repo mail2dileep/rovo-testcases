@@ -54,22 +54,36 @@ app.post("/create-tests", async (req, res) => {
       console.log("Creating test:", test.name);
 
       const issueResponse = await axios.post(
-        `${process.env.JIRA_BASE}/rest/api/3/issue`,
-        {
-          fields: {
-            project: { key: projectKey },
-            summary: test.name,
-            description: test.objective,
-            issuetype: { name: "Test" }
+  `${process.env.JIRA_BASE}/rest/api/3/issue`,
+  {
+    fields: {
+      project: { key: projectKey },
+      summary: test.name,
+      issuetype: { name: "Test" },
+      description: {
+        type: "doc",
+        version: 1,
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: test.objective
+              }
+            ]
           }
-        },
-        {
-          headers: {
-            Authorization: `Basic ${auth}`,
-            "Content-Type": "application/json"
-          }
-        }
-      );
+        ]
+      }
+    }
+  },
+  {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json"
+    }
+  }
+);
 
       console.log("✅ Created:", issueResponse.data.key);
     }
