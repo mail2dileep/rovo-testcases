@@ -1,6 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
@@ -10,19 +12,20 @@ app.use(express.json());
 ===================================================== */
 
 const JIRA_BASE = process.env.JIRA_BASE; // https://credera.atlassian.net
+const ZEPHYR_BASE = "https://prod-api.zephyr4jiracloud.com";
 
-const auth = Buffer.from(
+const jiraAuth = Buffer.from(
   `${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`
 ).toString("base64");
 
-const headers = {
-  Authorization: `Basic ${auth}`,
+const jiraHeaders = {
+  Authorization: `Basic ${jiraAuth}`,
   "Content-Type": "application/json",
   Accept: "application/json"
 };
 
 /* =====================================================
-   HELPER: 	 JQL Special Characters
+   HELPER: Escape JQL
 ===================================================== */
 
 function escapeJQL(text = "") {
@@ -30,35 +33,25 @@ function escapeJQL(text = "") {
 }
 
 /* =====================================================
-   HELPER: Check Duplicate Test (Exact match under story)
+   HELPER: Duplicate Check (Jira Cloud)
 ===================================================== */
 
 async function checkDuplicateTest(projectKey, storyKey, testName) {
   const safeName = escapeJQL(testName);
 
- const jql = `project = ${projectKey} AND issuetype = Test AND summary = "${safeName}" AND issue in linkedIssues("${storyKey}")`;
+  const jql = `project = ${projectKey} AND issuetype = Test AND summary = "${safeName}" AND issue in linkedIssues("${storyKey}")`;
 
   const response = await axios.post(
     `${JIRA_BASE}/rest/api/3/search/jql`,
-    {
-      jql: jql,
-      maxResults: 1,
-      fields: ["id"]
-    },
-    {
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/json",
-        Accept: "application/json"
-      }
-    }
+    { jql, maxResults: 1 },
+    { headers: jiraHeaders }
   );
 
   return response.data.total > 0;
 }
 
 /* =====================================================
-   HELPER: Link Test to Story (Relates)
+   HELPER: Link Test to Story
 ===================================================== */
 
 async function linkToStory(testKey, storyKey) {
@@ -69,25 +62,60 @@ async function linkToStory(testKey, storyKey) {
       inwardIssue: { key: storyKey },
       outwardIssue: { key: testKey }
     },
-    { headers }
+    { headers: jiraHeaders }
   );
 }
 
 /* =====================================================
-   HELPER: Add Zephyr Test Steps
-   IMPORTANT: Use numeric issueId (not key)
+   HELPER: Generate Zephyr JWT
+===================================================== */
+
+function generateZephyrJWT(method, apiPath) {
+  const epoch = Math.floor(Date.now() / 1000);
+  const expiry = epoch + 60;
+
+  const canonical = `${method}&${apiPath}&`;
+
+  const qsh = crypto
+    .createHash("sha256")
+    .update(canonical)
+    .digest("hex");
+
+  return jwt.sign(
+    {
+      iss: process.env.ZEPHYR_ACCESS_KEY,
+      iat: epoch,
+      exp: expiry,
+      qsh
+    },
+    process.env.ZEPHYR_SECRET_KEY
+  );
+}
+
+/* =====================================================
+   HELPER: Add Zephyr Steps (Cloud)
 ===================================================== */
 
 async function addTestSteps(issueId, steps) {
+  const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
+  const url = `${ZEPHYR_BASE}${apiPath}`;
+  const token = generateZephyrJWT("POST", apiPath);
+
   for (const s of steps) {
     await axios.post(
-      `${JIRA_BASE}/rest/zapi/cloud/1.0/teststep/${issueId}`,
+      url,
       {
         step: s.step,
         data: s.data || "",
         result: s.result || ""
       },
-      { headers }
+      {
+        headers: {
+          Authorization: `JWT ${token}`,
+          zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
+          "Content-Type": "application/json"
+        }
+      }
     );
   }
 }
@@ -108,10 +136,7 @@ function parseNumberedSteps(stepsString, expectedResult) {
   return stepsArray.map((stepText, index) => ({
     step: stepText,
     data: "",
-    result:
-      index === stepsArray.length - 1
-        ? expectedResult || ""
-        : ""
+    result: index === stepsArray.length - 1 ? expectedResult || "" : ""
   }));
 }
 
@@ -123,25 +148,17 @@ app.post("/create-tests", async (req, res) => {
   try {
     console.log("🔥 Webhook triggered");
 
-    let { tests } = req.body;
-
-    if (!tests) {
-      return res.status(400).json({ error: "No tests received" });
-    }
+    const { tests } = req.body;
+    if (!tests) return res.status(400).json({ error: "No tests received" });
 
     const parsedTests =
       typeof tests === "string" ? JSON.parse(tests) : tests;
-
-    if (!Array.isArray(parsedTests) || parsedTests.length === 0) {
-      return res.status(400).json({ error: "No test cases found" });
-    }
 
     let created = 0;
     let skipped = 0;
 
     for (const test of parsedTests) {
       if (!test.requirementId || !test.name) {
-        console.log("⚠️ Missing required fields. Skipping.");
         skipped++;
         continue;
       }
@@ -149,9 +166,8 @@ app.post("/create-tests", async (req, res) => {
       const storyKey = test.requirementId;
       const projectKey = storyKey.split("-")[0];
 
-      console.log(`\nProcessing: ${test.name}`);
+      console.log(`Processing: ${test.name}`);
 
-      /* ---------- Duplicate Check ---------- */
       const isDuplicate = await checkDuplicateTest(
         projectKey,
         storyKey,
@@ -159,13 +175,12 @@ app.post("/create-tests", async (req, res) => {
       );
 
       if (isDuplicate) {
-        console.log("⚠️ Duplicate found. Skipping...");
+        console.log("Duplicate found. Skipping...");
         skipped++;
         continue;
       }
-	  console.log("Creating tests");
 
-      /* ---------- Create Test Issue ---------- */
+      /* -------- Create Jira Test -------- */
       const issueResponse = await axios.post(
         `${JIRA_BASE}/rest/api/3/issue`,
         {
@@ -173,9 +188,6 @@ app.post("/create-tests", async (req, res) => {
             project: { key: projectKey },
             summary: test.name,
             issuetype: { name: "Test" },
-            priority: test.priority
-              ? { name: test.priority }
-              : undefined,
             description: {
               type: "doc",
               version: 1,
@@ -183,25 +195,22 @@ app.post("/create-tests", async (req, res) => {
                 {
                   type: "paragraph",
                   content: [
-                    {
-                      type: "text",
-                      text: test.objective || ""
-                    }
+                    { type: "text", text: test.objective || "" }
                   ]
                 }
               ]
             }
           }
         },
-        { headers }
+        { headers: jiraHeaders }
       );
 
       const createdTestKey = issueResponse.data.key;
       const createdTestId = issueResponse.data.id;
 
-      console.log("✅ Created:", createdTestKey);
+      console.log("Created:", createdTestKey);
 
-      /* ---------- Prepare Steps ---------- */
+      /* -------- Prepare Steps -------- */
       let formattedSteps = [];
 
       if (Array.isArray(test.steps)) {
@@ -213,26 +222,18 @@ app.post("/create-tests", async (req, res) => {
         );
       }
 
-      /* ---------- Add Zephyr Steps ---------- */
       if (formattedSteps.length > 0) {
         await addTestSteps(createdTestId, formattedSteps);
-        console.log("✅ Steps added");
-      } else {
-        console.log("⚠️ No steps found");
+        console.log("Steps added");
       }
 
-      /* ---------- Link to Story ---------- */
       await linkToStory(createdTestKey, storyKey);
-      console.log("🔗 Linked to story:", storyKey);
+      console.log("Linked to story");
 
       created++;
     }
 
-    res.json({
-      message: "Execution completed",
-      created,
-      skipped
-    });
+    res.json({ message: "Completed", created, skipped });
 
   } catch (error) {
     console.error("🔥 ERROR:", error.response?.data || error.message);
