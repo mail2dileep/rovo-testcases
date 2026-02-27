@@ -10,20 +10,22 @@ app.use(express.json());
 ===================================================== */
 
 const JIRA_BASE = process.env.JIRA_BASE; // https://credera.atlassian.net
+
 const auth = Buffer.from(
   `${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`
 ).toString("base64");
 
 const headers = {
   Authorization: `Basic ${auth}`,
-  "Content-Type": "application/json"
+  "Content-Type": "application/json",
+  Accept: "application/json"
 };
 
 /* =====================================================
-   HELPER: Escape JQL String (Prevents JQL break)
+   HELPER: Escape JQL Special Characters
 ===================================================== */
 
-function escapeJQL(text) {
+function escapeJQL(text = "") {
   return text.replace(/"/g, '\\"');
 }
 
@@ -42,9 +44,9 @@ async function checkDuplicateTest(projectKey, storyKey, testName) {
   `;
 
   const response = await axios.post(
-    `${JIRA_BASE}/rest/api/3/search/jql`,
+    `${JIRA_BASE}/rest/api/3/search`,
     {
-      jql: jql,
+      jql,
       maxResults: 1
     },
     { headers }
@@ -71,6 +73,7 @@ async function linkToStory(testKey, storyKey) {
 
 /* =====================================================
    HELPER: Add Zephyr Test Steps
+   IMPORTANT: Use numeric issueId (not key)
 ===================================================== */
 
 async function addTestSteps(issueId, steps) {
@@ -88,7 +91,7 @@ async function addTestSteps(issueId, steps) {
 }
 
 /* =====================================================
-   HELPER: Parse Numbered Steps (Fallback Support)
+   HELPER: Parse Numbered Steps (Fallback)
 ===================================================== */
 
 function parseNumberedSteps(stepsString, expectedResult) {
@@ -135,8 +138,8 @@ app.post("/create-tests", async (req, res) => {
     let skipped = 0;
 
     for (const test of parsedTests) {
-      if (!test.requirementId) {
-        console.log("⚠️ Missing requirementId. Skipping test.");
+      if (!test.requirementId || !test.name) {
+        console.log("⚠️ Missing required fields. Skipping.");
         skipped++;
         continue;
       }
@@ -159,7 +162,7 @@ app.post("/create-tests", async (req, res) => {
         continue;
       }
 
-      /* ---------- Create Jira Test Issue ---------- */
+      /* ---------- Create Test Issue ---------- */
       const issueResponse = await axios.post(
         `${JIRA_BASE}/rest/api/3/issue`,
         {
@@ -212,10 +215,10 @@ app.post("/create-tests", async (req, res) => {
         await addTestSteps(createdTestId, formattedSteps);
         console.log("✅ Steps added");
       } else {
-        console.log("⚠️ No valid steps found");
+        console.log("⚠️ No steps found");
       }
 
-      /* ---------- Link Test to Story ---------- */
+      /* ---------- Link to Story ---------- */
       await linkToStory(createdTestKey, storyKey);
       console.log("🔗 Linked to story:", storyKey);
 
@@ -229,7 +232,7 @@ app.post("/create-tests", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 REAL ERROR:", error.response?.data || error.message);
+    console.error("🔥 ERROR:", error.response?.data || error.message);
     res.status(500).json({
       error: error.response?.data || error.message
     });
