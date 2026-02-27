@@ -25,7 +25,7 @@ const jiraHeaders = {
 };
 
 /* =====================================================
-   UTIL: Escape JQL
+   ESCAPE JQL
 ===================================================== */
 
 function escapeJQL(text = "") {
@@ -33,7 +33,7 @@ function escapeJQL(text = "") {
 }
 
 /* =====================================================
-   GET PROJECT ID (Called Once Per Project)
+   GET PROJECT ID
 ===================================================== */
 
 async function getProjectId(projectKey) {
@@ -85,7 +85,7 @@ async function linkToStory(testKey, storyKey) {
 }
 
 /* =====================================================
-   GENERATE ZEPHYR JWT (Correct QSH)
+   GENERATE ZEPHYR JWT (WITH DEBUG LOGS)
 ===================================================== */
 
 function generateZephyrJWT(method, apiPath, queryString) {
@@ -98,6 +98,13 @@ function generateZephyrJWT(method, apiPath, queryString) {
     .createHash("sha256")
     .update(canonical)
     .digest("hex");
+
+  console.log("\n🔎 ===== ZEPHYR DEBUG =====");
+  console.log("Canonical String:");
+  console.log(canonical);
+  console.log("Computed QSH:");
+  console.log(qsh);
+  console.log("===========================\n");
 
   return jwt.sign(
     {
@@ -112,15 +119,17 @@ function generateZephyrJWT(method, apiPath, queryString) {
 }
 
 /* =====================================================
-   ADD ZEPHYR STEPS (USES ISSUE KEY)
+   ADD ZEPHYR STEPS (USES NUMERIC ISSUE ID)
 ===================================================== */
 
-async function addTestSteps(issueKey, projectId, steps) {
-  const apiPath = `/connect/public/rest/api/1.0/teststep/${issueKey}`;
+async function addTestSteps(issueId, projectId, steps) {
+  const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
   const queryString = `projectId=${projectId}`;
   const url = `${ZEPHYR_BASE}${apiPath}?${queryString}`;
 
-  // Generate JWT once per test
+  console.log("🔗 Zephyr URL:");
+  console.log(url);
+
   const token = generateZephyrJWT("POST", apiPath, queryString);
 
   for (const s of steps) {
@@ -191,13 +200,11 @@ app.post("/create-tests", async (req, res) => {
       const storyKey = test.requirementId;
       const projectKey = storyKey.split("-")[0];
 
-      console.log(`Processing: ${test.name}`);
+      console.log(`\nProcessing: ${test.name}`);
 
-      // Get projectId once per test
       const projectId = await getProjectId(projectKey);
       console.log(`Using Project ID ${projectId}`);
 
-      // Check duplicate
       const isDuplicate = await checkDuplicateTest(
         projectKey,
         storyKey,
@@ -236,8 +243,10 @@ app.post("/create-tests", async (req, res) => {
       );
 
       const createdTestKey = issueResponse.data.key;
+      const createdTestId = issueResponse.data.id; // NUMERIC
 
       console.log("Created:", createdTestKey);
+      console.log("Numeric Issue ID:", createdTestId);
 
       /* -------- Prepare Steps -------- */
       let formattedSteps = [];
@@ -252,7 +261,7 @@ app.post("/create-tests", async (req, res) => {
       }
 
       if (formattedSteps.length > 0) {
-        await addTestSteps(createdTestKey, projectId, formattedSteps);
+        await addTestSteps(createdTestId, projectId, formattedSteps);
         console.log("Steps added");
       }
 
