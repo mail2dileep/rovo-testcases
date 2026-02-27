@@ -33,7 +33,25 @@ function escapeJQL(text = "") {
 }
 
 /* =====================================================
-   DUPLICATE CHECK (Jira Cloud)
+   GET PROJECT ID (Called Once Per Project)
+===================================================== */
+
+async function getProjectId(projectKey) {
+  const response = await axios.get(
+    `${JIRA_BASE}/rest/api/3/project/${projectKey}`,
+    { headers: jiraHeaders }
+  );
+
+  const projectId = response.data.id;
+
+  console.log("📌 Project Key:", projectKey);
+  console.log("📌 Project ID:", projectId);
+
+  return projectId;
+}
+
+/* =====================================================
+   DUPLICATE CHECK
 ===================================================== */
 
 async function checkDuplicateTest(projectKey, storyKey, testName) {
@@ -72,13 +90,13 @@ async function linkToStory(testKey, storyKey) {
 
 function generateZephyrJWT(method, apiPath, queryString) {
   const epoch = Math.floor(Date.now() / 1000);
-  const expiry = epoch + 60; // 60 sec validity
+  const expiry = epoch + 60;
 
-  const canonicalRequest = `${method.toUpperCase()}&${apiPath}&${queryString}`;
+  const canonical = `${method.toUpperCase()}&${apiPath}&${queryString}`;
 
   const qsh = crypto
     .createHash("sha256")
-    .update(canonicalRequest)
+    .update(canonical)
     .digest("hex");
 
   return jwt.sign(
@@ -94,18 +112,15 @@ function generateZephyrJWT(method, apiPath, queryString) {
 }
 
 /* =====================================================
-   ADD ZEPHYR STEPS (Cloud)
+   ADD ZEPHYR STEPS
 ===================================================== */
 
 async function addTestSteps(issueId, projectId, steps) {
   const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
   const queryString = `projectId=${projectId}`;
   const url = `${ZEPHYR_BASE}${apiPath}?${queryString}`;
-  if (!process.env.ZEPHYR_ACCESS_KEY || !process.env.ZEPHYR_SECRET_KEY) {
-  throw new Error("Missing Zephyr credentials in .env");
-}
 
-  // ✅ Generate JWT once per test
+  // Generate once per test
   const token = generateZephyrJWT("POST", apiPath, queryString);
 
   for (const s of steps) {
@@ -128,7 +143,7 @@ async function addTestSteps(issueId, projectId, steps) {
 }
 
 /* =====================================================
-   PARSE NUMBERED STEPS (Fallback Support)
+   PARSE NUMBERED STEPS
 ===================================================== */
 
 function parseNumberedSteps(stepsString, expectedResult) {
@@ -178,6 +193,10 @@ app.post("/create-tests", async (req, res) => {
 
       console.log(`Processing: ${test.name}`);
 
+      // Fetch projectId once per loop
+      const projectId = await getProjectId(projectKey);
+      console.log(`Using Project ID ${projectId} for ${test.name}`);
+
       const isDuplicate = await checkDuplicateTest(
         projectKey,
         storyKey,
@@ -219,14 +238,6 @@ app.post("/create-tests", async (req, res) => {
       const createdTestId = issueResponse.data.id;
 
       console.log("Created:", createdTestKey);
-
-      /* -------- Get projectId -------- */
-      const issueDetails = await axios.get(
-        `${JIRA_BASE}/rest/api/3/issue/${createdTestKey}`,
-        { headers: jiraHeaders }
-      );
-
-      const projectId = issueDetails.data.fields.project.id;
 
       /* -------- Prepare Steps -------- */
       let formattedSteps = [];
