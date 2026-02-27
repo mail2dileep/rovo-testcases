@@ -70,11 +70,14 @@ async function linkToStory(testKey, storyKey) {
    GENERATE ZEPHYR JWT (Includes Query String)
 ===================================================== */
 
-function generateZephyrJWT(method, apiPathWithQuery) {
+function generateZephyrJWT(method, apiPath, queryParams = "") {
   const epoch = Math.floor(Date.now() / 1000);
   const expiry = epoch + 60;
 
-  const canonical = `${method}&${apiPathWithQuery}&`;
+  // Remove leading ?
+  const cleanQuery = queryParams.replace(/^\?/, "");
+
+  const canonical = `${method.toUpperCase()}&${apiPath}&${cleanQuery}`;
 
   const qsh = crypto
     .createHash("sha256")
@@ -90,7 +93,6 @@ function generateZephyrJWT(method, apiPathWithQuery) {
     },
     process.env.ZEPHYR_SECRET_KEY
   );
-}
 
 /* =====================================================
    ADD ZEPHYR STEPS (Cloud)
@@ -98,12 +100,11 @@ function generateZephyrJWT(method, apiPathWithQuery) {
 
 async function addTestSteps(issueId, projectId, steps) {
   const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
-  const query = `?projectId=${projectId}`;
-  const fullPathForJWT = `${apiPath}${query}`;
+  const query = `projectId=${projectId}`; // NO ?
 
-  const token = generateZephyrJWT("POST", fullPathForJWT);
+  const token = generateZephyrJWT("POST", apiPath, query);
 
-  const url = `${ZEPHYR_BASE}${apiPath}${query}`;
+  const url = `${ZEPHYR_BASE}${apiPath}?${query}`;
 
   for (const s of steps) {
     await axios.post(
