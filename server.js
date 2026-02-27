@@ -25,7 +25,7 @@ const jiraHeaders = {
 };
 
 /* =====================================================
-   HELPER: Escape JQL
+   ESCAPE JQL
 ===================================================== */
 
 function escapeJQL(text = "") {
@@ -67,17 +67,14 @@ async function linkToStory(testKey, storyKey) {
 }
 
 /* =====================================================
-   GENERATE ZEPHYR JWT (Includes Query String)
+   GENERATE ZEPHYR JWT (Correct QSH)
 ===================================================== */
 
-function generateZephyrJWT(method, apiPath, queryParams = "") {
+function generateZephyrJWT(method, apiPath, queryString) {
   const epoch = Math.floor(Date.now() / 1000);
   const expiry = epoch + 60;
 
-  // Remove leading ?
-  const cleanQuery = queryParams.replace(/^\?/, "");
-
-  const canonical = `${method.toUpperCase()}&${apiPath}&${cleanQuery}`;
+  const canonical = `${method.toUpperCase()}&${apiPath}&${queryString}`;
 
   const qsh = crypto
     .createHash("sha256")
@@ -93,6 +90,7 @@ function generateZephyrJWT(method, apiPath, queryParams = "") {
     },
     process.env.ZEPHYR_SECRET_KEY
   );
+}
 
 /* =====================================================
    ADD ZEPHYR STEPS (Cloud)
@@ -100,11 +98,11 @@ function generateZephyrJWT(method, apiPath, queryParams = "") {
 
 async function addTestSteps(issueId, projectId, steps) {
   const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
-  const query = `projectId=${projectId}`; // NO ?
+  const queryString = `projectId=${projectId}`;
 
-  const token = generateZephyrJWT("POST", apiPath, query);
+  const token = generateZephyrJWT("POST", apiPath, queryString);
 
-  const url = `${ZEPHYR_BASE}${apiPath}?${query}`;
+  const url = `${ZEPHYR_BASE}${apiPath}?${queryString}`;
 
   for (const s of steps) {
     await axios.post(
@@ -126,7 +124,7 @@ async function addTestSteps(issueId, projectId, steps) {
 }
 
 /* =====================================================
-   PARSE NUMBERED STEPS (Fallback)
+   PARSE NUMBERED STEPS (Fallback Support)
 ===================================================== */
 
 function parseNumberedSteps(stepsString, expectedResult) {
@@ -135,7 +133,7 @@ function parseNumberedSteps(stepsString, expectedResult) {
   const stepsArray = stepsString
     .split("\n")
     .map(step => step.trim())
-    .filter(step => step.length > 0)
+    .filter(Boolean)
     .map(step => step.replace(/^\d+\.\s*/, ""));
 
   return stepsArray.map((stepText, index) => ({
