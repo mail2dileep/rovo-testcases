@@ -33,7 +33,7 @@ function escapeJQL(text = "") {
 }
 
 /* =====================================================
-   HELPER: Duplicate Check (Jira Cloud)
+   DUPLICATE CHECK (Jira Cloud)
 ===================================================== */
 
 async function checkDuplicateTest(projectKey, storyKey, testName) {
@@ -51,7 +51,7 @@ async function checkDuplicateTest(projectKey, storyKey, testName) {
 }
 
 /* =====================================================
-   HELPER: Link Test to Story
+   LINK TEST TO STORY
 ===================================================== */
 
 async function linkToStory(testKey, storyKey) {
@@ -67,14 +67,14 @@ async function linkToStory(testKey, storyKey) {
 }
 
 /* =====================================================
-   HELPER: Generate Zephyr JWT
+   GENERATE ZEPHYR JWT (Includes Query String)
 ===================================================== */
 
-function generateZephyrJWT(method, apiPath) {
+function generateZephyrJWT(method, apiPathWithQuery) {
   const epoch = Math.floor(Date.now() / 1000);
   const expiry = epoch + 60;
 
-  const canonical = `${method}&${apiPath}&`;
+  const canonical = `${method}&${apiPathWithQuery}&`;
 
   const qsh = crypto
     .createHash("sha256")
@@ -93,13 +93,17 @@ function generateZephyrJWT(method, apiPath) {
 }
 
 /* =====================================================
-   HELPER: Add Zephyr Steps (Cloud)
+   ADD ZEPHYR STEPS (Cloud)
 ===================================================== */
 
-async function addTestSteps(issueId, steps) {
+async function addTestSteps(issueId, projectId, steps) {
   const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
-  const url = `${ZEPHYR_BASE}${apiPath}`;
-  const token = generateZephyrJWT("POST", apiPath);
+  const query = `?projectId=${projectId}`;
+  const fullPathForJWT = `${apiPath}${query}`;
+
+  const token = generateZephyrJWT("POST", fullPathForJWT);
+
+  const url = `${ZEPHYR_BASE}${apiPath}${query}`;
 
   for (const s of steps) {
     await axios.post(
@@ -121,7 +125,7 @@ async function addTestSteps(issueId, steps) {
 }
 
 /* =====================================================
-   HELPER: Parse Numbered Steps (Fallback)
+   PARSE NUMBERED STEPS (Fallback)
 ===================================================== */
 
 function parseNumberedSteps(stepsString, expectedResult) {
@@ -136,7 +140,10 @@ function parseNumberedSteps(stepsString, expectedResult) {
   return stepsArray.map((stepText, index) => ({
     step: stepText,
     data: "",
-    result: index === stepsArray.length - 1 ? expectedResult || "" : ""
+    result:
+      index === stepsArray.length - 1
+        ? expectedResult || ""
+        : ""
   }));
 }
 
@@ -210,6 +217,14 @@ app.post("/create-tests", async (req, res) => {
 
       console.log("Created:", createdTestKey);
 
+      /* -------- Get projectId -------- */
+      const issueDetails = await axios.get(
+        `${JIRA_BASE}/rest/api/3/issue/${createdTestKey}`,
+        { headers: jiraHeaders }
+      );
+
+      const projectId = issueDetails.data.fields.project.id;
+
       /* -------- Prepare Steps -------- */
       let formattedSteps = [];
 
@@ -223,7 +238,7 @@ app.post("/create-tests", async (req, res) => {
       }
 
       if (formattedSteps.length > 0) {
-        await addTestSteps(createdTestId, formattedSteps);
+        await addTestSteps(createdTestId, projectId, formattedSteps);
         console.log("Steps added");
       }
 
