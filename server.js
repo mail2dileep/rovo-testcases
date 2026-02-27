@@ -81,7 +81,7 @@ async function linkToStory(testKey, storyKey) {
 async function addTestSteps(issueId, steps) {
   for (const s of steps) {
     await axios.post(
-      `${JIRA_BASE}/rest/zapi/latest/teststep/${issueId}`,
+      `${JIRA_BASE}/rest/zapi/cloud/1.0/teststep/${issueId}`,
       {
         step: s.step,
         data: s.data || "",
