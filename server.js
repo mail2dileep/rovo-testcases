@@ -41,12 +41,13 @@ async function checkDuplicateTest(projectKey, storyKey, testName) {
     AND issue in linkedIssues("${storyKey}")
   `;
 
-  const response = await axios.get(
-    `${JIRA_BASE}/rest/api/3/search`,
+  const response = await axios.post(
+    `${JIRA_BASE}/rest/api/3/search/jql`,
     {
-      headers,
-      params: { jql, maxResults: 1 }
-    }
+      jql: jql,
+      maxResults: 1
+    },
+    { headers }
   );
 
   return response.data.total > 0;
