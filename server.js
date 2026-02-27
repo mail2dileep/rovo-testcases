@@ -11,7 +11,7 @@ app.use(express.json());
    CONFIG
 ===================================================== */
 
-const JIRA_BASE = process.env.JIRA_BASE; // https://credera.atlassian.net
+const JIRA_BASE = process.env.JIRA_BASE;
 const ZEPHYR_BASE = "https://prod-api.zephyr4jiracloud.com";
 
 const jiraAuth = Buffer.from(
@@ -25,7 +25,7 @@ const jiraHeaders = {
 };
 
 /* =====================================================
-   ESCAPE JQL
+   UTIL: Escape JQL
 ===================================================== */
 
 function escapeJQL(text = "") {
@@ -112,15 +112,15 @@ function generateZephyrJWT(method, apiPath, queryString) {
 }
 
 /* =====================================================
-   ADD ZEPHYR STEPS
+   ADD ZEPHYR STEPS (USES ISSUE KEY)
 ===================================================== */
 
-async function addTestSteps(issueId, projectId, steps) {
-  const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
+async function addTestSteps(issueKey, projectId, steps) {
+  const apiPath = `/connect/public/rest/api/1.0/teststep/${issueKey}`;
   const queryString = `projectId=${projectId}`;
   const url = `${ZEPHYR_BASE}${apiPath}?${queryString}`;
 
-  // Generate once per test
+  // Generate JWT once per test
   const token = generateZephyrJWT("POST", apiPath, queryString);
 
   for (const s of steps) {
@@ -193,10 +193,11 @@ app.post("/create-tests", async (req, res) => {
 
       console.log(`Processing: ${test.name}`);
 
-      // Fetch projectId once per loop
+      // Get projectId once per test
       const projectId = await getProjectId(projectKey);
-      console.log(`Using Project ID ${projectId} for ${test.name}`);
+      console.log(`Using Project ID ${projectId}`);
 
+      // Check duplicate
       const isDuplicate = await checkDuplicateTest(
         projectKey,
         storyKey,
@@ -235,7 +236,6 @@ app.post("/create-tests", async (req, res) => {
       );
 
       const createdTestKey = issueResponse.data.key;
-      const createdTestId = issueResponse.data.id;
 
       console.log("Created:", createdTestKey);
 
@@ -252,7 +252,7 @@ app.post("/create-tests", async (req, res) => {
       }
 
       if (formattedSteps.length > 0) {
-        await addTestSteps(createdTestId, projectId, formattedSteps);
+        await addTestSteps(createdTestKey, projectId, formattedSteps);
         console.log("Steps added");
       }
 
