@@ -72,13 +72,13 @@ async function linkToStory(testKey, storyKey) {
 
 function generateZephyrJWT(method, apiPath, queryString) {
   const epoch = Math.floor(Date.now() / 1000);
-  const expiry = epoch + 60;
+  const expiry = epoch + 60; // 60 sec validity
 
-  const canonical = `${method.toUpperCase()}&${apiPath}&${queryString}`;
+  const canonicalRequest = `${method.toUpperCase()}&${apiPath}&${queryString}`;
 
   const qsh = crypto
     .createHash("sha256")
-    .update(canonical)
+    .update(canonicalRequest)
     .digest("hex");
 
   return jwt.sign(
@@ -88,7 +88,8 @@ function generateZephyrJWT(method, apiPath, queryString) {
       exp: expiry,
       qsh
     },
-    process.env.ZEPHYR_SECRET_KEY
+    process.env.ZEPHYR_SECRET_KEY,
+    { algorithm: "HS256" }
   );
 }
 
@@ -98,7 +99,14 @@ function generateZephyrJWT(method, apiPath, queryString) {
 
 async function addTestSteps(issueId, projectId, steps) {
   const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
-  const url = `${ZEPHYR_BASE}${apiPath}?projectId=${projectId}`;
+  const queryString = `projectId=${projectId}`;
+  const url = `${ZEPHYR_BASE}${apiPath}?${queryString}`;
+  if (!process.env.ZEPHYR_ACCESS_KEY || !process.env.ZEPHYR_SECRET_KEY) {
+  throw new Error("Missing Zephyr credentials in .env");
+}
+
+  // ✅ Generate JWT once per test
+  const token = generateZephyrJWT("POST", apiPath, queryString);
 
   for (const s of steps) {
     await axios.post(
@@ -110,7 +118,7 @@ async function addTestSteps(issueId, projectId, steps) {
       },
       {
         headers: {
-          Authorization: `JWT ${process.env.ZEPHYR_JWT_TOKEN}`,
+          Authorization: `JWT ${token}`,
           zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
           "Content-Type": "application/json"
         }
