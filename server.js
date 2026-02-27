@@ -22,11 +22,11 @@ const headers = {
 };
 
 /* =====================================================
-   HELPER: Escape JQL Special Characters
+   HELPER: 	 JQL Special Characters
 ===================================================== */
 
 function escapeJQL(text = "") {
-  return text.replace(/"/g, '\\"');
+  return text.replace(/["\\]/g, "\\$&");
 }
 
 /* =====================================================
@@ -36,20 +36,22 @@ function escapeJQL(text = "") {
 async function checkDuplicateTest(projectKey, storyKey, testName) {
   const safeName = escapeJQL(testName);
 
-  const jql = `
-    project = ${projectKey}
-    AND issuetype = Test
-    AND summary = "${safeName}"
-    AND issue in linkedIssues("${storyKey}")
-  `;
+ const jql = `project = ${projectKey} AND issuetype = Test AND summary = "${safeName}" AND issue in linkedIssues("${storyKey}")`;
 
   const response = await axios.post(
-    `${JIRA_BASE}/rest/api/3/search`,
+    `${JIRA_BASE}/rest/api/3/search/jql`,
     {
-      jql,
-      maxResults: 1
+      jql: jql,
+      maxResults: 1,
+      fields: ["id"]
     },
-    { headers }
+    {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      }
+    }
   );
 
   return response.data.total > 0;
@@ -161,6 +163,7 @@ app.post("/create-tests", async (req, res) => {
         skipped++;
         continue;
       }
+	  console.log("Creating tests");
 
       /* ---------- Create Test Issue ---------- */
       const issueResponse = await axios.post(
