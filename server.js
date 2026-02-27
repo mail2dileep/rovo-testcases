@@ -98,11 +98,7 @@ function generateZephyrJWT(method, apiPath, queryString) {
 
 async function addTestSteps(issueId, projectId, steps) {
   const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
-  const queryString = `projectId=${projectId}`;
-
-  const token = generateZephyrJWT("POST", apiPath, queryString);
-
-  const url = `${ZEPHYR_BASE}${apiPath}?${queryString}`;
+  const url = `${ZEPHYR_BASE}${apiPath}?projectId=${projectId}`;
 
   for (const s of steps) {
     await axios.post(
@@ -114,7 +110,7 @@ async function addTestSteps(issueId, projectId, steps) {
       },
       {
         headers: {
-          Authorization: `JWT ${token}`,
+          Authorization: `JWT ${process.env.ZEPHYR_JWT_TOKEN}`,
           zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
           "Content-Type": "application/json"
         }
