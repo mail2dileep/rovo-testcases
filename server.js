@@ -88,32 +88,32 @@ async function linkToStory(testKey, storyKey) {
    GENERATE ZEPHYR JWT (WITH DEBUG LOGS)
 ===================================================== */
 
-function generateZephyrJWT(method, apiPath, queryParams) {
+function generateZephyrJWT(method, fullUrl) {
   const epoch = Math.floor(Date.now() / 1000);
   const expiry = epoch + 60;
 
-  // Sort query parameters alphabetically
-  const sortedKeys = Object.keys(queryParams).sort();
+  const url = new URL(fullUrl);
 
-  const canonicalQuery = sortedKeys
-    .map(key =>
-      `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key])}`
+  const pathname = url.pathname.replace(/\/+$/, "");
+
+  const params = Array.from(url.searchParams.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, value]) =>
+      `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
     )
     .join("&");
 
-  const canonical = `${method.toUpperCase()}&${apiPath}&${canonicalQuery}`;
+  const canonical = `${method.toUpperCase()}&${pathname}&${params}`;
 
   const qsh = crypto
     .createHash("sha256")
     .update(canonical)
     .digest("hex");
 
-  console.log("\n🔎 ===== ZEPHYR DEBUG =====");
-  console.log("Canonical String:");
-  console.log(canonical);
-  console.log("Computed QSH:");
-  console.log(qsh);
-  console.log("===========================\n");
+  console.log("\n===== DEBUG =====");
+  console.log("Canonical:", canonical);
+  console.log("QSH:", qsh);
+  console.log("=================\n");
 
   return jwt.sign(
     {
@@ -129,39 +129,31 @@ function generateZephyrJWT(method, apiPath, queryParams) {
 /* =====================================================
    ADD ZEPHYR STEPS (USES NUMERIC ISSUE ID)
 ===================================================== */
-
 async function addTestSteps(issueId, projectId, steps) {
-  const apiPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
+  const url = `${ZEPHYR_BASE}/connect/public/rest/api/1.0/teststep/${issueId}?projectId=${projectId}`;
 
-  const queryParams = {
-    projectId: projectId
-  };
-
-  const queryString = `projectId=${projectId}`;
-  const url = `${ZEPHYR_BASE}${apiPath}?${queryString}`;
-
-  console.log("🔗 Zephyr URL:");
-  console.log(url);
-
-  const token = generateZephyrJWT("POST", apiPath, queryParams);
+  const token = generateZephyrJWT("POST", url);
 
   for (const s of steps) {
-    await axios.post(
-      url,
-      {
-        step: s.step,
-        data: s.data || "",
-        result: s.result || ""
-      },
-      {
-        headers: {
-          Authorization: `JWT ${token}`,
-          zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
-          "Content-Type": "application/json"
-        }
+
+  const token = generateZephyrJWT("POST", url);
+  console.log("Token value:", token);
+
+  await axios.post(
+    url,
+    {
+      step: s.step,
+      data: s.data || "",
+      result: s.result || ""
+    },
+    {
+      headers: {
+        Authorization: `JWT ${token}`,
+        zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
+        "Content-Type": "application/json"
       }
-    );
-  }
+    }
+  );
 }
 
 /* =====================================================
