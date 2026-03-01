@@ -122,7 +122,8 @@ function generateZephyrJWT(method, path, queryParams) {
 
 async function addTestSteps(issueId, projectId, steps) {
 
-  const path = `/connect/public/rest/api/1.0/teststep/${issueId}`;
+  const requestPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
+  const canonicalPath = `/public/rest/api/1.0/teststep/${issueId}`;
 
   for (const s of steps) {
 
@@ -130,17 +131,17 @@ async function addTestSteps(issueId, projectId, steps) {
       projectId: String(projectId)
     };
 
-    const token = generateZephyrJWT("POST", path, queryParams);
+    const token = generateZephyrJWT("POST", canonicalPath, queryParams);
 
     await axios.post(
-      `${ZEPHYR_BASE}${path}`,
+      `${ZEPHYR_BASE}${requestPath}`,
       {
         step: s.step,
         data: s.data || "",
         result: s.result || ""
       },
       {
-        params: queryParams, // IMPORTANT: pass query via axios params
+        params: queryParams,
         headers: {
           Authorization: `JWT ${token}`,
           zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
@@ -150,7 +151,6 @@ async function addTestSteps(issueId, projectId, steps) {
     );
   }
 }
-
 /* =====================================================
    PARSE NUMBERED STEPS
 ===================================================== */
