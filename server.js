@@ -59,14 +59,21 @@ async function checkDuplicateTest(projectKey, testName) {
   `;
 
   const response = await axios.post(
-    `${JIRA_BASE}/rest/api/3/search/jql`,
-    { jql, maxResults: 1 },
+    `${JIRA_BASE}/rest/api/3/search`,
+    {
+      jql: jql,
+      maxResults: 1
+    },
     { headers: jiraHeaders }
   );
 
-  console.log("Duplicate search count:", response.data.total);
+  console.log("Duplicate API raw response:", response.data);
 
-  return response.data.total > 0;
+  const total = response.data.total || 0;
+
+  console.log("Duplicate search count:", total);
+
+  return total > 0;
 }
 
 /* =====================================================
