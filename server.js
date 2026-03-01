@@ -48,16 +48,23 @@ async function getProjectId(projectKey) {
    DUPLICATE CHECK
 ===================================================== */
 
-async function checkDuplicateTest(projectKey, storyKey, testName) {
+async function checkDuplicateTest(projectKey, testName) {
+
   const safeName = escapeJQL(testName);
 
-  const jql = `project = ${projectKey} AND issuetype = Test AND summary = "${safeName}" AND issue in linkedIssues("${storyKey}")`;
+  const jql = `
+    project = ${projectKey}
+    AND issuetype = Test
+    AND summary = "${safeName}"
+  `;
 
   const response = await axios.post(
     `${JIRA_BASE}/rest/api/3/search/jql`,
     { jql, maxResults: 1 },
     { headers: jiraHeaders }
   );
+
+  console.log("Duplicate search count:", response.data.total);
 
   return response.data.total > 0;
 }
@@ -204,11 +211,7 @@ app.post("/create-tests", async (req, res) => {
 
       const projectId = await getProjectId(projectKey);
 
-      const isDuplicate = await checkDuplicateTest(
-        projectKey,
-        storyKey,
-        test.name
-      );
+      const isDuplicate = await checkDuplicateTest(projectKey, test.name);
 
       if (isDuplicate) {
         console.log("Duplicate found. Skipping...");
