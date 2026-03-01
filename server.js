@@ -130,7 +130,7 @@ function generateZephyrJWT(method, fullUrl) {
    ADD ZEPHYR STEPS (USES NUMERIC ISSUE ID)
 ===================================================== */
 async function addTestSteps(issueId, projectId, steps) {
-  const url = `${ZEPHYR_BASE}/public/rest/api/1.0/teststep/${issueId}?projectId=${projectId}`;
+  const url = `${ZEPHYR_BASE}/connect/public/rest/api/1.0/teststep/${issueId}?projectId=${projectId}`;
 
   for (const s of steps) {
 
