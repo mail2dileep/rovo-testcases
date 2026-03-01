@@ -25,7 +25,7 @@ const jiraHeaders = {
 };
 
 /* =====================================================
-   ESCAPE JQL
+   UTIL
 ===================================================== */
 
 function escapeJQL(text = "") {
@@ -41,13 +41,7 @@ async function getProjectId(projectKey) {
     `${JIRA_BASE}/rest/api/3/project/${projectKey}`,
     { headers: jiraHeaders }
   );
-
-  const projectId = response.data.id;
-
-  console.log("📌 Project Key:", projectKey);
-  console.log("📌 Project ID:", projectId);
-
-  return projectId;
+  return response.data.id;
 }
 
 /* =====================================================
@@ -85,35 +79,30 @@ async function linkToStory(testKey, storyKey) {
 }
 
 /* =====================================================
-   GENERATE ZEPHYR JWT (WITH DEBUG LOGS)
+   GENERATE ZEPHYR JWT (CANONICAL SAFE)
 ===================================================== */
 
-function generateZephyrJWT(method, fullUrl) {
+function generateZephyrJWT(method, path, queryParams) {
   const epoch = Math.floor(Date.now() / 1000);
   const expiry = epoch + 60;
 
-  const url = new URL(fullUrl);
+  const sortedKeys = Object.keys(queryParams).sort();
 
-  const pathname = url.pathname.replace(/\/+$/, "");
-
-  const params = Array.from(url.searchParams.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, value]) =>
-      `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-    )
+  const canonicalQuery = sortedKeys
+    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key])}`)
     .join("&");
 
-  const canonical = `${method.toUpperCase()}&${pathname}&${params}`;
+  const canonical = `${method.toUpperCase()}&${path}&${canonicalQuery}`;
 
   const qsh = crypto
     .createHash("sha256")
     .update(canonical)
     .digest("hex");
 
-  console.log("\n===== DEBUG =====");
+  console.log("\n===== CONNECT DEBUG =====");
   console.log("Canonical:", canonical);
   console.log("QSH:", qsh);
-  console.log("=================\n");
+  console.log("=========================\n");
 
   return jwt.sign(
     {
@@ -126,25 +115,32 @@ function generateZephyrJWT(method, fullUrl) {
     { algorithm: "HS256" }
   );
 }
+
 /* =====================================================
-   ADD ZEPHYR STEPS (USES NUMERIC ISSUE ID)
+   ADD ZEPHYR STEPS (NUMERIC ISSUE ID)
 ===================================================== */
+
 async function addTestSteps(issueId, projectId, steps) {
-  const url = `${ZEPHYR_BASE}/connect/public/rest/api/1.0/teststep/${issueId}?projectId=${projectId}`;
+
+  const path = `/connect/public/rest/api/1.0/teststep/${issueId}`;
 
   for (const s of steps) {
 
-    const token = generateZephyrJWT("POST", url);
-    console.log("Token value:", token);
+    const queryParams = {
+      projectId: String(projectId)
+    };
+
+    const token = generateZephyrJWT("POST", path, queryParams);
 
     await axios.post(
-      url,
+      `${ZEPHYR_BASE}${path}`,
       {
         step: s.step,
         data: s.data || "",
         result: s.result || ""
       },
       {
+        params: queryParams, // IMPORTANT: pass query via axios params
         headers: {
           Authorization: `JWT ${token}`,
           zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
@@ -153,7 +149,8 @@ async function addTestSteps(issueId, projectId, steps) {
       }
     );
   }
-}  // ✅ THIS WAS MISSING
+}
+
 /* =====================================================
    PARSE NUMBERED STEPS
 ===================================================== */
@@ -170,10 +167,9 @@ function parseNumberedSteps(stepsString, expectedResult) {
   return stepsArray.map((stepText, index) => ({
     step: stepText,
     data: "",
-    result:
-      index === stepsArray.length - 1
-        ? expectedResult || ""
-        : ""
+    result: index === stepsArray.length - 1
+      ? expectedResult || ""
+      : ""
   }));
 }
 
@@ -195,6 +191,7 @@ app.post("/create-tests", async (req, res) => {
     let skipped = 0;
 
     for (const test of parsedTests) {
+
       if (!test.requirementId || !test.name) {
         skipped++;
         continue;
@@ -203,10 +200,9 @@ app.post("/create-tests", async (req, res) => {
       const storyKey = test.requirementId;
       const projectKey = storyKey.split("-")[0];
 
-      console.log(`\nProcessing: ${test.name}`);
+      console.log(`Processing: ${test.name}`);
 
       const projectId = await getProjectId(projectKey);
-      console.log(`Using Project ID ${projectId}`);
 
       const isDuplicate = await checkDuplicateTest(
         projectKey,
@@ -220,7 +216,6 @@ app.post("/create-tests", async (req, res) => {
         continue;
       }
 
-      /* -------- Create Jira Test -------- */
       const issueResponse = await axios.post(
         `${JIRA_BASE}/rest/api/3/issue`,
         {
@@ -246,12 +241,8 @@ app.post("/create-tests", async (req, res) => {
       );
 
       const createdTestKey = issueResponse.data.key;
-      const createdTestId = issueResponse.data.id; // NUMERIC
+      const createdTestId = issueResponse.data.id;
 
-      console.log("Created:", createdTestKey);
-      console.log("Numeric Issue ID:", createdTestId);
-
-      /* -------- Prepare Steps -------- */
       let formattedSteps = [];
 
       if (Array.isArray(test.steps)) {
@@ -265,11 +256,9 @@ app.post("/create-tests", async (req, res) => {
 
       if (formattedSteps.length > 0) {
         await addTestSteps(createdTestId, projectId, formattedSteps);
-        console.log("Steps added");
       }
 
       await linkToStory(createdTestKey, storyKey);
-      console.log("Linked to story");
 
       created++;
     }
