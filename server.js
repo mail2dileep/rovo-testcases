@@ -132,30 +132,28 @@ function generateZephyrJWT(method, fullUrl) {
 async function addTestSteps(issueId, projectId, steps) {
   const url = `${ZEPHYR_BASE}/connect/public/rest/api/1.0/teststep/${issueId}?projectId=${projectId}`;
 
-  const token = generateZephyrJWT("POST", url);
-
   for (const s of steps) {
 
-  const token = generateZephyrJWT("POST", url);
-  console.log("Token value:", token);
+    const token = generateZephyrJWT("POST", url);
+    console.log("Token value:", token);
 
-  await axios.post(
-    url,
-    {
-      step: s.step,
-      data: s.data || "",
-      result: s.result || ""
-    },
-    {
-      headers: {
-        Authorization: `JWT ${token}`,
-        zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
-        "Content-Type": "application/json"
+    await axios.post(
+      url,
+      {
+        step: s.step,
+        data: s.data || "",
+        result: s.result || ""
+      },
+      {
+        headers: {
+          Authorization: `JWT ${token}`,
+          zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
+          "Content-Type": "application/json"
+        }
       }
-    }
-  );
-}
-
+    );
+  }
+}  // ✅ THIS WAS MISSING
 /* =====================================================
    PARSE NUMBERED STEPS
 ===================================================== */
