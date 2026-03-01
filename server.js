@@ -59,7 +59,7 @@ async function checkDuplicateTest(projectKey, testName) {
   `;
 
   const response = await axios.post(
-    `${JIRA_BASE}/rest/api/3/search`,
+    `${JIRA_BASE}/rest/api/3/search/jql`,
     {
       jql: jql,
       maxResults: 1
@@ -67,13 +67,13 @@ async function checkDuplicateTest(projectKey, testName) {
     { headers: jiraHeaders }
   );
 
-  console.log("Duplicate API raw response:", response.data);
+  console.log("Duplicate raw response:", response.data);
 
-  const total = response.data.total || 0;
+  const issues = response.data.issues || [];
 
-  console.log("Duplicate search count:", total);
+  console.log("Duplicate search count:", issues.length);
 
-  return total > 0;
+  return issues.length > 0;
 }
 
 /* =====================================================
@@ -233,6 +233,7 @@ app.post("/create-tests", async (req, res) => {
             project: { key: projectKey },
             summary: test.name,
             issuetype: { name: "Test" },
+            labels: [`AUTO_${storyKey}`],
             description: {
               type: "doc",
               version: 1,
