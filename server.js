@@ -139,6 +139,8 @@ async function addTestSteps(issueId, projectId, steps) {
   const requestPath = `/connect/public/rest/api/1.0/teststep/${issueId}`;
   const canonicalPath = `/public/rest/api/1.0/teststep/${issueId}`;
 
+  console.log(`Adding ${steps.length} test steps to issue ${issueId}...`);
+
   for (const s of steps) {
 
     const queryParams = {
@@ -147,22 +149,31 @@ async function addTestSteps(issueId, projectId, steps) {
 
     const token = generateZephyrJWT("POST", canonicalPath, queryParams);
 
-    await axios.post(
-      `${ZEPHYR_BASE}${requestPath}`,
-      {
-        step: s.step,
-        data: s.data || "",
-        result: s.result || ""
-      },
-      {
-        params: queryParams,
-        headers: {
-          Authorization: `JWT ${token}`,
-          zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
-          "Content-Type": "application/json"
+    try {
+      console.log(`Adding step: ${s.step}`);
+      
+      const response = await axios.post(
+        `${ZEPHYR_BASE}${requestPath}`,
+        {
+          step: s.step,
+          data: s.data || "",
+          result: s.result || ""
+        },
+        {
+          params: queryParams,
+          headers: {
+            Authorization: `JWT ${token}`,
+            zapiAccessKey: process.env.ZEPHYR_ACCESS_KEY,
+            "Content-Type": "application/json"
+          }
         }
-      }
-    );
+      );
+      
+      console.log(`✓ Step added successfully. Response:`, response.data);
+    } catch (error) {
+      console.error(`✗ Failed to add step: ${s.step}`, error.response?.data || error.message);
+      throw error;
+    }
   }
 }
 /* =====================================================
@@ -265,11 +276,23 @@ app.post("/create-tests", async (req, res) => {
         );
       }
 
+      console.log(`Test "${test.name}" created with key: ${createdTestKey}, ID: ${createdTestId}`);
+      console.log(`Steps to add: ${formattedSteps.length}`);
+
       if (formattedSteps.length > 0) {
-        await addTestSteps(createdTestId, projectId, formattedSteps);
+        try {
+          await addTestSteps(createdTestId, projectId, formattedSteps);
+          console.log(`✓ All test steps added successfully`);
+        } catch (error) {
+          console.error(`✗ Failed to add test steps:`, error.message);
+          throw error;
+        }
+      } else {
+        console.warn(`⚠ No test steps found to add`);
       }
 
       await linkToStory(createdTestKey, storyKey);
+      console.log(`✓ Test linked to story: ${storyKey}`);
 
       created++;
     }
