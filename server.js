@@ -54,15 +54,13 @@ async function checkDuplicateTest(projectKey, testName) {
 
   const jql = `project = ${projectKey} AND issuetype = Test AND summary = "${safeName}"`;
 
-  const response = await axios.get(
-    `${JIRA_BASE}/rest/api/3/search`,
+  const response = await axios.post(
+    `${JIRA_BASE}/rest/api/3/search/jql`,
     {
-      params: {
-        jql: jql,
-        maxResults: 1
-      },
-      headers: jiraHeaders
-    }
+      jql: jql,
+      maxResults: 1
+    },
+    { headers: jiraHeaders }
   );
 
   console.log("Duplicate raw response:", response.data);
