@@ -52,7 +52,7 @@ async function checkDuplicateTest(projectKey, testName) {
 
   const safeName = escapeJQL(testName);
 
-  const jql = `project = ${projectKey} AND issuetype = "Test" AND summary = "${safeName}"`;
+  const jql = `project = ${projectKey} AND issuetype = "Test" AND summary ~ "${safeName}"`;
 
   console.log("🔍 Checking for duplicate with JQL:", jql);
 
