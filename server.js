@@ -52,22 +52,29 @@ async function checkDuplicateTest(projectKey, testName) {
 
   const safeName = escapeJQL(testName);
 
-  const jql = `project = ${projectKey} AND issuetype = Test AND summary = "${safeName}"`;
+  const jql = `project = ${projectKey} AND issuetype = "Test" AND summary = "${safeName}"`;
+
+  console.log("🔍 Checking for duplicate with JQL:", jql);
 
   const response = await axios.post(
     `${JIRA_BASE}/rest/api/3/search/jql`,
     {
       jql: jql,
-      maxResults: 1
+      maxResults: 1,
+      fields: ["summary", "key", "issuetype"]
     },
     { headers: jiraHeaders }
   );
 
-  console.log("Duplicate raw response:", response.data);
+  console.log("Duplicate raw response:", JSON.stringify(response.data, null, 2));
 
   const issues = response.data.issues || [];
 
   console.log("Duplicate search count:", issues.length);
+  
+  if (issues.length > 0) {
+    console.log("Found duplicate:", issues[0].key, "-", issues[0].fields?.summary);
+  }
 
   return issues.length > 0;
 }
