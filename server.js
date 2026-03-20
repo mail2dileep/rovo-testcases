@@ -52,19 +52,17 @@ async function checkDuplicateTest(projectKey, testName) {
 
   const safeName = escapeJQL(testName);
 
-  const jql = `
-    project = ${projectKey}
-    AND issuetype = Test
-    AND summary = "${safeName}"
-  `;
+  const jql = `project = ${projectKey} AND issuetype = Test AND summary = "${safeName}"`;
 
-  const response = await axios.post(
-    `${JIRA_BASE}/rest/api/3/search/jql`,
+  const response = await axios.get(
+    `${JIRA_BASE}/rest/api/3/search`,
     {
-      jql: jql,
-      maxResults: 1
-    },
-    { headers: jiraHeaders }
+      params: {
+        jql: jql,
+        maxResults: 1
+      },
+      headers: jiraHeaders
+    }
   );
 
   console.log("Duplicate raw response:", response.data);
@@ -214,6 +212,7 @@ app.post("/create-tests", async (req, res) => {
 
     let created = 0;
     let skipped = 0;
+    let duplicates = 0;
 
     for (const test of parsedTests) {
 
@@ -233,7 +232,7 @@ app.post("/create-tests", async (req, res) => {
 
       if (isDuplicate) {
         console.log("Duplicate found. Skipping...");
-        skipped++;
+        duplicates++;
         continue;
       }
 
@@ -297,7 +296,7 @@ app.post("/create-tests", async (req, res) => {
       created++;
     }
 
-    res.json({ message: "Completed", created, skipped });
+    res.json({ message: "Completed", created, skipped, duplicates });
 
   } catch (error) {
     console.error("🔥 ERROR:", error.response?.data || error.message);
