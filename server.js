@@ -216,6 +216,7 @@ app.post("/create-tests", async (req, res) => {
       typeof tests === "string" ? JSON.parse(tests) : tests;
 
     let created = 0;
+    let linked = 0;
     let skipped = 0;
     let duplicates = 0;
 
@@ -299,9 +300,18 @@ app.post("/create-tests", async (req, res) => {
       console.log(`✓ Test linked to story: ${storyKey}`);
 
       created++;
+      linked++;
     }
 
-    res.json({ message: "Completed", created, skipped, duplicates });
+    // Reached only after every test was created, its Zephyr steps were added,
+    // and it was linked to the related story.
+    return res.status(200).json({
+      message: "Completed",
+      created,
+      linked,
+      skipped,
+      duplicates
+    });
 
   } catch (error) {
     console.error("🔥 ERROR:", error.response?.data || error.message);
