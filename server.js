@@ -215,15 +215,9 @@ app.post("/create-tests", async (req, res) => {
     const parsedTests =
       typeof tests === "string" ? JSON.parse(tests) : tests;
 
-    let created = 0;
-    let linked = 0;
-    let skipped = 0;
-    let duplicates = 0;
-
     for (const test of parsedTests) {
 
       if (!test.requirementId || !test.name) {
-        skipped++;
         continue;
       }
 
@@ -238,7 +232,6 @@ app.post("/create-tests", async (req, res) => {
 
       if (isDuplicate) {
         console.log("Duplicate found. Skipping...");
-        duplicates++;
         continue;
       }
 
@@ -299,19 +292,16 @@ app.post("/create-tests", async (req, res) => {
       await linkToStory(createdTestKey, storyKey);
       console.log(`✓ Test linked to story: ${storyKey}`);
 
-      created++;
-      linked++;
     }
 
     // Reached only after every test was created, its Zephyr steps were added,
     // and it was linked to the related story.
-    return res.status(200).json({
-      message: "Completed",
-      created,
-      linked,
-      skipped,
-      duplicates
+    res.once("finish", () => {
+      if (res.statusCode === 200) {
+        console.log("Test generation completed successfully; 200 response sent.");
+      }
     });
+    return res.status(200).json({ message: "Completed" });
 
   } catch (error) {
     console.error("🔥 ERROR:", error.response?.data || error.message);
